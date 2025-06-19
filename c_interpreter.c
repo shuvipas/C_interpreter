@@ -1,5 +1,9 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <memory.h>
+#include <string.h>
+#include <unistd.h> 
 #define int int64_t
 #define POOL_SIZE 256*1024
 
@@ -30,30 +34,34 @@ int eval(){
 int main(int argc, char** argv) {
     argc--;
     argv++;
-    int fd;
+   // int fd;
     int i;
     pool_size = POOL_SIZE;
     line_num = 1;
-    fd = open(*argv,0);
-    if(fd<0){
+    FILE* fp = fopen(*argv,"rb");
+    if(!fp){
         printf("ERROR: coud not open the file (%s)\n",*argv);
         return -1;
     }
     src = malloc(pool_size);
     if(!src){
         printf("ERROR: coud not allocet size of %d\n",pool_size);
+        fclose(fp);
         return -1;
     }
     prev_src =src;
     
-     i = read(fd, src, pool_size-1);
-     if(i< 1){
-        printf("ERROR: at read() return value: %d \n", i);
+     i = fread(src, sizeof(char), pool_size - 1, fp);
+     if (ferror(fp)) {
+        perror("ERROR: at fread() function");
+        free(src); 
+        fclose(fp);
         return -1;
-     }
+    }
      src[i]=0;
-     close(fd);
+     fclose(fp);
 
      program();
+     free(src);
      return eval();
 }
