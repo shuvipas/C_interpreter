@@ -193,8 +193,8 @@ int main(int argc, char** argv) {
     src[i]=0;
     close(fd);
     
-    //test
-    text[i++] = IMM;
+    // test 
+    text[i++] =IMM;
     text[i++] = 10;
     text[i++] = PUSH;
     text[i++] = IMM;
@@ -202,7 +202,7 @@ int main(int argc, char** argv) {
     text[i++] = ADD;
     text[i++] = PUSH;
     text[i++] = EXIT;
-    pc = text;
+    pc = text;  
 
 
     program();
