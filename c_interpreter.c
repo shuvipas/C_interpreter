@@ -193,7 +193,7 @@ int main(int argc, char** argv) {
     src[i]=0;
     close(fd);
     
-    // test 
+    //test 
     text[i++] =IMM;
     text[i++] = 10;
     text[i++] = PUSH;
