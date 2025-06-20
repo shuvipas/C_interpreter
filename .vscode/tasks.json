@@ -9,7 +9,7 @@
                 "-g",
                 "${file}",
                 "-o",
-                "${fileDirname}/${fileBasenameNoExtension}"
+                "${workspaceFolder}/c_interpreter.out"
             ],
             "options": {
                 "cwd": "${fileDirname}"
