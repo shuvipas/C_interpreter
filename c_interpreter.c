@@ -1,3 +1,6 @@
+// doesnt soport macros, struct, /* */,
+
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -11,10 +14,14 @@
 #define POOL_SIZE 256*1024
 
 int token;
+int token_val; 
+
 char* src;
 char* prev_src;
 int pool_size;
 int line_num;
+int *curr_id;
+int *symbol_table;
 
 //for the vm
 //memory segments
@@ -34,8 +41,96 @@ enum { LEA ,IMM ,JMP ,CALL,JZ  ,JNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PUSH,
        OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,
        OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,EXIT };
 
+// tokens (operators last and in precedence order)
+enum {
+  Num = 128, Fun, Sys, Glo, Loc, Id,
+  Char, Else, Enum, If, Int, Return, Sizeof, While,
+  Assign, Cond, Lor, Lan, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Brak
+};
+
+// fields of identifier
+enum {Token, Hash, Name, Type, Class, Value, BType, BClass, BValue, IdSize};
+
+
+
 void next_token(){
-    token = *(src++);
+    // token = *(src++);
+    char *last_pos;
+    int hash;
+    while(token = *src){ // while will skip unknown characters
+        src++;
+        //identifer and symbol table (uniqe id for var name etc)
+        if((token >='a' &&token <='z')||(token >='A' &&token <='Z')||token =='_' ){
+            // parse id
+            last_pos = src -1;
+            hash = token;
+            while ((*src >= 'a' && *src <= 'z') || (*src >= 'A' && *src <= 'Z') || (*src >= '0' && *src <= '9') || (*src == '_')) {
+                hash = hash * 147 + *src; //the hashing algorithm
+                src++;
+            }
+            // look for existing id
+            curr_id = symbol_table;
+            while(curr_id[Token]){
+                
+                if(curr_id[Hash]== hash&& !memcmp((char*)curr_id[Name],last_pos,src -last_pos)){
+                    token =curr_id[Token];
+                    return; 
+                }
+                curr_id += IdSize;
+            }
+            // save new id
+            curr_id[Name] = (int) last_pos;
+            curr_id[Hash] = hash;
+            curr_id[Token] = Id;
+            token = Id;
+            return;
+        }
+        //numbers suporte: dec(123) hex(0x123) oct(017)
+        else if(token >='0' || token<='9'){
+            token_val = token -'0';
+            if(token_val >0){
+                while(*src >= '0' && *src <= '9'){
+                    token_val = token_val*10 + *src++ -'0';
+                }
+            }
+            else if(*src =='x' || *src =='X'){
+                token = *(++src);
+                while((token >= '0' && token <= '9')||(token >= 'a' && token <= 'f') || (token >= 'A' && token <= 'F')){
+                    token_val = token_val*16 + (token & 0x0F) + (token >= 'A' ? 9 : 0);
+                    token = *(++src);
+                }
+
+            }
+            else{
+                while(*src >= '0' && *src <= '7'){
+                    token_val = token_val*8 + *src++ -'0';
+                }
+            }
+            token = Num;
+            return;
+        }
+
+        else{
+            switch (token)
+            {
+            case '\n': 
+                line_num++;
+                break;
+            case '#': // skip macros
+                while(*src != 0 &&*src != '\n') src++;
+                break;
+            case '"':
+            case '\'':
+
+                break;
+            
+            
+            default:
+                break;
+            }
+        }
+        
+    }
 }
 
 void expression(int level) {
