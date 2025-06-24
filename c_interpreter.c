@@ -16,19 +16,19 @@
 int token;
 int token_val; 
 
-char* src;
-char* prev_src;
+char* src = NULL;
+char* prev_src = NULL;
 int pool_size;
 int line_num;
-int *curr_id;
-int *symbol_table;
+int *curr_id = NULL;
+int *symbol_table = NULL;
 
 //for the vm
 //memory segments
-int *text; 
-int *prev_text;
-int *stack;
-char* data;
+int *text = NULL; 
+int *prev_text = NULL;
+int *stack = NULL;
+char* data = NULL;
 //regs
 int* pc;
 int*sp;
@@ -36,10 +36,12 @@ int* bp; //base pointer
 int ax;
 int* cycle;
 
+int* id_main =NULL;
+
 // vm instructions
 enum { LEA ,IMM ,JMP ,CALL,JZ  ,JNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PUSH,
        OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,
-       OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,EXIT };
+       OPEN,READ,CLOS,PRTF,MALC,FREE,MSET,MCMP,EXIT };
 
 // tokens (operators last and in precedence order)
 enum {
@@ -51,6 +53,7 @@ enum {
 // fields of identifier
 enum {Token, Hash, Name, Type, Class, Value, BType, BClass, BValue, IdSize};
 
+enum{ CHAR, INT,PTR};
 
 
 void next_token(){
@@ -119,12 +122,134 @@ void next_token(){
             case '#': // skip macros
                 while(*src != 0 &&*src != '\n') src++;
                 break;
-            case '"':
+            case '"': //string literals only '\n' is sopported 
             case '\'':
-
+                last_pos = data;
+                while(*src!= 0 && *src != token){
+                    token_val = *(src++);
+                    if (token_val == '\\') {
+                        token_val = *src++;
+                        if (token_val == 'n') {
+                            token_val = '\n';
+                        }
+                    }
+                    if (token == '"') {
+                        *data++ = token_val;
+                    }
+                }
+                src++;
+                if (token == '"') {
+                    token_val = (int) last_pos;
+                } 
+                else {
+                    token = Num;
+                }
+                return;
+            case '/': 
+                if (*src == '/') { // "//" comments (/* ... */ are not supported)
+                    while (*src != 0 && *src != '\n') {
+                        ++src;
+                    }
+                    break;
+                }
+                else { // divide operator
+                token = Div;
+                return;
+                }
                 break;
             
-            
+            case '=':
+                if(*src =='='){
+                    src++;
+                    token = Eq;
+                }
+                else{
+                    token = Assign;
+                }
+                return;
+            case '+':
+                if(*src =='+'){
+                    src++;
+                    token = Inc;
+                }
+                else{
+                    token = Add;
+                }
+                return;
+            case '-':
+                if(*src =='-'){
+                    src++;
+                    token = Dec;
+                }
+                else{
+                    token = Sub;
+                }
+                return;
+            case '!':
+                if(*src =='='){
+                    src++;
+                    token = Ne;
+                }
+                return;
+            case '<':
+                if(*src =='='){
+                    src++;
+                    token = Le;
+                }
+                else if(*src == '<'){
+                    src++;
+                    token = Shl;
+                }
+                else{
+                    token = Lt;
+                }
+                return;
+            case '>':
+                if(*src =='='){
+                    src++;
+                    token = Ge;
+                }
+                else if(*src == '>'){
+                    src++;
+                    token = Shr;
+                }
+                else{
+                    token = Gt;
+                }
+                return;
+            case '|':
+                if(*src =='|'){
+                    src++;
+                    token = Lor;
+                }
+                else{
+                    token = Or;
+                }
+                return;
+            case '&':
+                if(*src =='&'){
+                    src++;
+                    token = Lan;
+                }
+                else{
+                    token = And;
+                }
+                return;
+            case '^': token = Xor; return;
+            case '%': token = Xor; return;
+            case '*': token = Mul; return;
+            case '[': token = Brak; return;
+            case '?': token = Cond; return;
+            case '~':
+            case ';':
+            case '{':
+            case '}':
+            case '(':
+            case ')':
+            case ']':
+            case ',':
+            case ':':
+                return; // the char is return as a  token 
             default:
                 break;
             }
@@ -205,6 +330,7 @@ int eval(){
                ax = printf((char *)tmp[-1], tmp[-2], tmp[-3], tmp[-4], tmp[-5], tmp[-6]);
                break;
             case MALC: ax = (int)malloc(*sp); break;
+            case FREE: free((void*)*sp); break;
             case MSET: ax = (int)memset((char *)sp[2], sp[1], *sp); break;
             case MCMP: ax = memcmp((char *)sp[2], (char *)sp[1], *sp);break;
             case EXIT: 
@@ -218,6 +344,9 @@ int eval(){
     }
     return 0;
 }
+void free_all(){
+
+}
 /*
 ================================== MAIN ==================================
 */
@@ -229,7 +358,7 @@ int main(int argc, char** argv) {
     argv++;
 
    // int fd;
-    // int i;
+    int i;
     // pool_size = POOL_SIZE;
     line_num = 1;
     // FILE* fp = fopen(*argv,"rb");
@@ -262,32 +391,54 @@ int main(int argc, char** argv) {
         return -1;
     }
     memset(stack, 0, POOL_SIZE);
+        symbol_table = malloc(POOL_SIZE);
+    if(!symbol_table){
+        printf("ERROR: malloc for symbol_table\n");
+    }
 
     sp = (int*)((int)stack + POOL_SIZE);
     bp =sp;
     ax =0;
 
+    src = "char else enum if int return sizeof while "
+      "open read close printf malloc free memset memcmp exit void main";
 
+    i = Char;
+    while(i<=While){
+        next_token();
+        curr_id[Token] = i++;
+    }
+    i = OPEN;
+    while(i<=EXIT){
+        curr_id[Class] = Sys;
+        curr_id[Type] = INT;
+        curr_id[Value] = i++;
+    }
 
+    next_token();
+    curr_id[Token] = Char;
+    next_token();
+    id_main = curr_id;
 
     src = malloc(POOL_SIZE);
     if(!src){
-        printf("ERROR: coud not allocet size of %d\n",POOL_SIZE);
+        printf("ERROR: malloc for src code\n");
         close(fd);
         return -1;
     }
     prev_src =src;
     
-    int i = read(fd, src, POOL_SIZE-1); // fread(src, sizeof(char), POOL_SIZE - 1, fp);
+    i = read(fd, src, POOL_SIZE-1); // fread(src, sizeof(char), POOL_SIZE - 1, fp);
      if (i<1){
         printf("ERROR: at read() return value: %d \n", i); 
-        free(src); 
-        close(fd);
         return -1;
     }
-    src[i]=0;
-    close(fd);
-    
+
+    // src[i]=0;
+    // close(fd);
+
+   
+
     //test 
     text[i++] =IMM;
     text[i++] = 10;
