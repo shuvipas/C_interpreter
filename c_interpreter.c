@@ -263,9 +263,6 @@ void next_token(){
     }
 }
 
-void expression(int level) {
-    // do nothing
-}
 void match(int tk){
     if (token == tk){
         next_token();
@@ -276,6 +273,594 @@ void match(int tk){
         exit(-1);
     }
 }
+void expression(int level) {
+    int *id;
+    int tmp;
+    int *addr;
+    if (!token) {
+        printf("ERROR in line %d: unexpected token EOF of expression\n", line_num);
+        free_all();
+        exit(-1);
+    }
+    switch(token){
+        case Num:
+            match(Num);
+            *(++text) = IMM;
+            *(++text) = token_val;
+            expr_type = INT;
+            break;
+        case '"':
+            // emit code
+            *(++text) = IMM;
+            *(++text) = token_val;
+            match('"');
+
+            // store the rest strings
+            while (token == '"') match('"');
+
+            //This line is ensuring that the data pointer is always aligned to an int boundary
+            data = (char *)(((int)data + sizeof(int)) & (-sizeof(int))); 
+            expr_type = PTR;  
+            break;
+        case Sizeof:
+            match(Sizeof);
+            match('(');
+            expr_type = INT;
+
+            if (token == Int) {
+                match(Int);
+            } else if (token == Char) {
+                match(Char);
+                expr_type = CHAR;
+            }
+
+            while (token == Mul) {
+                match(Mul);
+                expr_type = expr_type + PTR;
+            }
+
+            match(')');
+
+            // emit code
+            *++text = IMM;
+            *++text = (expr_type == CHAR) ? sizeof(char) : sizeof(int);
+            expr_type = INT;
+            break;
+        case Id:
+            // 1. function call
+            // 2. Enum variable
+            // 3. global/local variable
+            match(Id);
+
+            id = curr_id;
+
+            if (token == '(') {
+                // function call
+                match('(');
+                // pass in arguments
+                tmp = 0; // number of arguments
+                while (token != ')') {
+                    expression(Assign);
+                    *(++text) = PUSH;
+                    tmp++;
+
+                    if (token == ',') match(',');
+                }
+                match(')');
+
+                if (id[Class] == Sys) {
+                    // system functions
+                    *(++text) = id[Value];
+                }
+                else if (id[Class] == Fun) {
+                    // function call
+                    *(++text) = CALL;
+                    *(++text) = id[Value];
+                }
+                else {
+                    printf("ERROR in line %d: bad function call\n", line_num);
+                    free_all();
+                    exit(-1);
+                }
+
+            
+                // clean the stack for arguments
+                if (tmp > 0) {
+                    *(++text) = ADJ;
+                    *(++text) = tmp;
+                }
+                expr_type = id[Type];
+            }
+            else if (id[Class] == Num) {
+                // enum variable
+                *(++text) = IMM;
+                *(++text) = id[Value];
+                expr_type = INT;
+            }
+            else {
+                // variable
+                if (id[Class] == Loc) {
+                    *(++text) = LEA;
+                    *(++text) = index_of_bp - id[Value];
+                }
+                else if (id[Class] == Glo) {
+                    *(++text) = IMM;
+                    *(++text) = id[Value];
+                }
+                else {
+                    printf("ERROR in line %d: undefined variable\n", line_num);
+                    free_all();
+                    exit(-1);
+                }
+                // emit code, default behaviour is to load the value of the
+                // address which is stored in `ax`
+                expr_type = id[Type];
+                *++text = (expr_type == Char) ? LC : LI;
+            }
+            break;
+        case '(':
+            // cast or parenthesis
+            match('(');
+            if (token == Int || token == Char) {
+                tmp = (token == Char) ? CHAR : INT; // cast type
+                match(token);
+                while (token == Mul) {
+                    match(Mul);
+                    tmp = tmp + PTR;
+                }
+                match(')');
+
+                expression(Inc); // cast has precedence as Inc(++)
+
+                expr_type  = tmp;
+            } 
+            else {
+                // normal parenthesis
+                expression(Assign);
+                match(')');
+            }
+            break;
+        case Mul:
+            // dereference *<addr>
+            match(Mul);
+            expression(Inc); // dereference has the same precedence as Inc(++)
+
+            if (expr_type >= PTR) {
+                expr_type = expr_type - PTR;
+            } 
+            else {
+                printf("ERROR in line %d: bad dereference\n", line_num);
+                exit(-1);
+            }
+
+            *(++text) = (expr_type == CHAR) ? LC : LI;
+            break;
+        case And:
+            // get the address of
+            match(And);
+            expression(Inc); // get the address of
+            if (*text == LC || *text == LI) {
+                text--;
+            } else {
+                printf("ERROR in line %d: bad address of\n", line_num);
+                exit(-1);
+            }
+
+            expr_type = expr_type + PTR;
+            break;
+        case '!':
+            match('!');
+            expression(Inc);
+
+            // emit code, use <expr> == 0
+            *(++text) = PUSH;
+            *(++text) = IMM;
+            *(++text) = 0;
+            *(++text)= EQ;
+
+            expr_type = INT;
+            break;
+        case '~':
+            // bitwise not
+            match('~');
+            expression(Inc);
+
+            // emit code, use <expr> XOR -1
+            *(++text) = PUSH;
+            *(++text)= IMM;
+            *(++text)= -1;
+            *(++text)= XOR;
+
+            expr_type = INT;
+            break;
+        case Add:
+            match(Add);
+            expression(Inc);
+            expr_type = INT;
+            break;
+        case Sub:
+            match(Sub);
+            if (token == Num) {
+                *(++text) = IMM;
+                *(++text) = -token_val;
+                match(Num);
+            } 
+            else {
+                *(++text) = IMM;
+                *(++text) = -1;
+                *(++text) = PUSH;
+                expression(Inc);
+                *(++text) = MUL;
+            }
+            expr_type = INT;
+            break;
+        case Inc:
+        case Dec:
+            tmp = token;
+            match(token);
+            expression(Inc);
+            if (*text == LC) {
+                *text = PUSH;  // to duplicate the address
+                *++text = LC;
+            } 
+            else if (*text == LI) {
+                *text = PUSH;
+                *++text = LI;
+            } 
+            else {
+                printf("ERROR in line %d: invalid lvalue of pre-increment\n", line_num);
+                free_all();
+                exit(-1);
+            }
+            *++text = PUSH;
+            *++text = IMM;
+
+            *++text = (expr_type > PTR) ? sizeof(int) : sizeof(char);
+            *++text = (tmp == Inc) ? ADD : SUB;
+            *++text = (expr_type == CHAR) ? SC : SI;
+        break;
+        default:
+            printf("ERROR in line %d: invalid expression\n", line_num);
+            free_all();
+            exit(-1);
+    }
+    // binary operator and postfix operators.
+    while(token>=level){
+        tmp = expr_type;
+        switch(token){
+            case Assign:
+                // var = expr;
+                match(Assign);
+                if (*text == LC || *text == LI) *text = PUSH; // save the lvalue's pointer
+                else {
+                    printf("ERROR in line %d: invalid lvalue in assignment\n", line_num);
+                    free_all();
+                    exit(-1);
+                }
+                expression(Assign);
+
+                expr_type = tmp;
+                *++text = (expr_type == CHAR) ? SC : SI;
+                break;
+            case Cond:
+                // expr ? a : b;
+                match(Cond);
+                *++text = JZ;
+                addr = ++text;
+                expression(Assign);
+                if (token == ':') match(':'); 
+                else {
+                    printf("ERROR in line %d: missing colon in conditional\n", line_num);
+                    free_all();
+                    exit(-1);
+                }
+                *addr = (int)(text + 3);
+                *++text = JMP;
+                addr = ++text;
+                expression(Cond);
+                *addr = (int)(text + 1);
+                break;
+            case Lor:
+                match(Lor);
+                *++text = JNZ;
+                addr = ++text;
+                expression(Lan);
+                *addr = (int)(text + 1);
+                expr_type = INT;
+                break;
+            case Lan:
+                match(Lan);
+                *++text = JZ;
+                addr = ++text;
+                expression(Or);
+                *addr = (int)(text + 1);
+                expr_type = INT;
+                break;
+            case Xor:
+                // bitwise xor
+                match(Xor);
+                *++text = PUSH;
+                expression(And);
+                *++text = XOR;
+                expr_type = INT;  
+                break;
+            case Or: 
+                match(Or);
+                *++text = PUSH;
+                expression(Xor);
+                *++text = OR;
+                expr_type = INT;            
+            break;
+            
+            case And: 
+                match(And);
+                *++text = PUSH;
+                expression(Eq);
+                *++text = AND;
+                expr_type = INT;            
+            break;
+            
+            case Eq: 
+                match(Eq);
+                *++text = PUSH;
+                expression(Ne);
+                *++text = EQ;
+                expr_type = INT;            
+                break;
+            case Ne: 
+                 match(Ne);
+                *++text = PUSH;
+                expression(Lt);
+                *++text = NE;
+                expr_type = INT;           
+                break;
+            case Lt:
+                match(Lt);
+                *++text = PUSH;
+                expression(Shl);
+                *++text = LT;
+                expr_type = INT;                
+                break;
+
+            case Gt:
+                 match(Gt);
+                *++text = PUSH;
+                expression(Shl);
+                *++text = GT;
+                expr_type = INT;           
+                break;
+            case Le:
+                match(Le);
+                *++text = PUSH;
+                expression(Shl);
+                *++text = LE;
+                expr_type = INT;            
+                break;
+            case Ge:
+                 match(Ge);
+                *++text = PUSH;
+                expression(Shl);
+                *++text = GE;
+                expr_type = INT;           
+                break;
+            case Shl:
+                match(Shl);
+                *++text = PUSH;
+                expression(Add);
+                *++text = SHL;
+                expr_type = INT;            
+                break;
+            case Shr:
+                // shift right
+                match(Shr);
+                *++text = PUSH;
+                expression(Add);
+                *++text = SHR;
+                expr_type = INT;
+                break;         
+            case Add:
+                match(Add);
+                *++text = PUSH;
+                expression(Mul);
+                expr_type = tmp;
+
+                if (expr_type > PTR) {
+                    // pointer type, and not `char *`
+                    *++text = PUSH;
+                    *++text = IMM;
+                    *++text = sizeof(int);
+                    *++text = MUL;
+                }
+                *++text = ADD;
+            break;
+            case Sub:
+                match(Sub);
+                *++text = PUSH;
+                expression(Mul);
+                if (tmp > PTR && tmp == expr_type) {
+                    // pointer subtraction
+                    *++text = SUB;
+                    *++text = PUSH;
+                    *++text = IMM;
+                    *++text = sizeof(int);
+                    *++text = DIV;
+                    expr_type = INT;
+                } 
+                else if (tmp > PTR) {
+                    // pointer movement
+                    *++text = PUSH;
+                    *++text = IMM;
+                    *++text = sizeof(int);
+                    *++text = MUL;
+                    *++text = SUB;
+                    expr_type = tmp;
+                } 
+                else {
+                    // numeral subtraction
+                    *++text = SUB;
+                    expr_type = tmp;
+                }
+                break;
+            case Mul:
+                match(Mul);
+                *++text = PUSH;
+                expression(Inc);
+                *++text = MUL;
+                expr_type = tmp;
+            break;
+
+            case Div:
+                match(Div);
+                *++text = PUSH;
+                expression(Inc);
+                *++text = DIV;
+                expr_type = tmp;
+                break;
+            case Mod:
+                match(Mod);
+                *++text = PUSH;
+                expression(Inc);
+                *++text = MOD;
+                expr_type = tmp;            
+            break;
+
+            case Inc:
+            case Dec:
+                // postfix inc(++) and dec(--)
+                // we will increase the value to the variable and decrease it
+                // on `ax` to get its original value.
+                if (*text == LI) {
+                    *text = PUSH;
+                    *++text = LI;
+                }
+                else if (*text == LC) {
+                    *text = PUSH;
+                    *++text = LC;
+                }
+                else {
+                    printf("ERROR in line %d: invalid value in increment\n", line_num);
+                    free_all();
+                    exit(-1);
+                }
+
+                *++text = PUSH;
+                *++text = IMM;
+                *++text = (expr_type > PTR) ? sizeof(int) : sizeof(char);
+                *++text = (token == Inc) ? ADD : SUB;
+                *++text = (expr_type == CHAR) ? SC : SI;
+                *++text = PUSH;
+                *++text = IMM;
+                *++text = (expr_type > PTR) ? sizeof(int) : sizeof(char);
+                *++text = (token == Inc) ? SUB : ADD;
+                match(token);                
+                break;
+            case Brak: //[]
+                match(Brak);
+                *++text = PUSH;
+                expression(Assign);
+                match(']');
+
+                if (tmp > PTR) {
+                    // pointer, `not char *`
+                    *++text = PUSH;
+                    *++text = IMM;
+                    *++text = sizeof(int);
+                    *++text = MUL;
+                }
+                else if (tmp < PTR) {
+                    printf("ERROR in line %d: pointer type expected\n", line_num);
+                    free_all();
+                    exit(-1);
+                }
+                expr_type = tmp - PTR;
+                *++text = ADD;
+                *++text = (expr_type == CHAR) ? LC : LI;                
+                break;
+            default:
+                    printf("ERROR in line %d: compiler error, token = %d\n", line_num,token);
+                    free_all();
+                    exit(-1);
+        }
+    }
+
+}
+void statement() {
+    // there are 6 kinds of statements here:
+    // 1. if (...) <statement> [else <statement>]
+    // 2. while (...) <statement>
+    // 3. { <statement> }
+    // 4. return xxx;
+    // 5. <empty statement>;
+    int *a = NULL;
+    int* b = NULL;
+    switch (token){
+        case If:
+            match(If);
+            match('(');
+            expression(Assign);  // parse condition
+            match(')');
+
+            *(++text) = JZ;
+            b = ++text;
+
+            statement();         // parse statement
+            if (token == Else) { // parse else
+                match(Else);
+
+                // emit code for JMP B
+                *b = (int)(text + 3);
+                *(++text) = JMP;
+                b = ++text;
+
+                statement();
+            }
+
+            *b = (int)(text + 1);
+            break;
+        case While:
+            match(While);
+
+            a = text + 1;
+
+            match('(');
+            expression(Assign);
+            match(')');
+
+            *(++text) = JZ;
+            b = ++text;
+
+            statement();
+
+            *(++text) = JMP;
+            *(++text) = (int)a;
+            *b = (int)(text + 1);
+
+            break;
+        case Return:
+            match(Return);
+
+            if (token != ';') expression(Assign);
+            match(';');
+
+            // emit code for return
+            *(++text) = LEV;
+            break;
+        case '{':
+            // { <statement> ... }
+            match('{');
+            while (token != '}') statement();
+            match('}');
+            break;
+        case ';':
+            match(';');
+            break;
+        default:
+            // a = b; or function_call();
+            expression(Assign);
+            match(';');
+    }
+}
+
 
 
 void function_parameters() {
@@ -594,7 +1179,10 @@ int eval(){
     return 0;
 }
 void free_all(){
-
+    free(prev_src);
+    free(prev_text);
+    free(data);
+    free(stack);
 }
 /*
 ================================== MAIN ==================================
@@ -701,10 +1289,7 @@ int main(int argc, char** argv) {
 
 
     program();
-    // free(prev_src);
-    // free(prev_text);
-    // free(data);
-    // free(stack);
+
     int status = eval();
     free_all();
     return status;

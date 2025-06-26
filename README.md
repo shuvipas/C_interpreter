@@ -15,6 +15,10 @@
 |type      |  enum     |               |
 |definitions|          |               |
 |          |           |               |
+|sizeof    |           |int, char,ptr  |
+|          |           |               |
+|          |           |               |
+|          |           |               |
 |          |           |               |
 
 todo: add free to vm 
