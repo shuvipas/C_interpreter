@@ -13,6 +13,7 @@
 #define int int64_t
 #define POOL_SIZE 256*1024
 
+void free_all();
 int token;
 int token_val; 
 
@@ -37,6 +38,10 @@ int ax;
 int* cycle;
 
 int* id_main =NULL;
+int base_type;  
+int expr_type;
+
+int index_of_bp; // index of bp pointer on stack
 
 // vm instructions
 enum { LEA ,IMM ,JMP ,CALL,JZ  ,JNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PUSH,
@@ -261,11 +266,255 @@ void next_token(){
 void expression(int level) {
     // do nothing
 }
+void match(int tk){
+    if (token == tk){
+        next_token();
+    }
+    else {
+        printf("ERROR in line %d: expected the token:%d (got %d)\n",line_num,tk,token);
+        free_all();
+        exit(-1);
+    }
+}
+
+
+void function_parameters() {
+    int type=0;
+    int params =0;
+    
+    while (token != ')') {
+        // int name, ...
+        type = INT;
+        if (token == Int) {
+            match(Int);
+        } else if (token == Char) {
+            type = CHAR;
+            match(Char);
+        }
+
+        // pointer type
+        while (token == Mul) {
+            match(Mul);
+            type = type + PTR;
+        }
+
+        // parameter name
+        if (token != Id) {
+            printf("ERROR in line %d: invalid parameter declaration\n", line_num);
+            exit(-1);
+        }
+        if (curr_id[Class] == Loc) {
+            printf("ERROR in line %d: duplicate parameter declaration\n", line_num);
+            exit(-1);
+        }
+
+        match(Id);
+
+        // store the local variable
+        curr_id[BClass] = curr_id[Class]; 
+        curr_id[Class]  = Loc;
+        curr_id[BType]  = curr_id[Type];  
+        curr_id[Type]   = type;
+        curr_id[BValue] = curr_id[Value]; 
+        curr_id[Value]  = params++;   // index of current parameter
+
+        if (token == ',') {
+            match(',');
+        }
+    }
+    index_of_bp = params+1;
+}
+
+void function_body() {
+
+
+    int pos_local=0; // position of local variables on the stack.
+    int type=0;
+    pos_local = index_of_bp;
+
+    while (token == Int || token == Char) {
+        // local variable declaration, just like global ones.
+        base_type = (token == Int) ? INT : CHAR;
+        match(token);
+
+        while (token != ';') {
+            type = base_type;
+            while (token == Mul) {
+                match(Mul);
+                type = type + PTR;
+            }
+
+            if (token != Id) {
+                // invalid declaration
+                printf("ERROR in line %d: invalid local declaration\n", line_num);
+                free_all();
+                exit(-1);
+            }
+            if (curr_id[Class] == Loc) {
+                // identifier exists 
+                printf("ERROR in line %d: duplicate local declaration\n", line_num);
+                free_all();
+                exit(-1);
+            }
+            match(Id);
+
+            // store the local variable
+            curr_id[BClass] = curr_id[Class]; 
+            curr_id[Class]  = Loc;
+            curr_id[BType]  = curr_id[Type];
+            curr_id[Type]   = type;
+            curr_id[BValue] = curr_id[Value]; 
+            curr_id[Value]  = ++pos_local;   // index of current parameter
+
+            if (token == ',') {
+                match(',');
+            }
+        }
+        match(';');
+    }
+
+
+    *(++text) = ENT;
+    *(++text) = pos_local - index_of_bp;
+
+    while (token != '}') {
+        statement();
+    }
+
+    // emit code for leaving the sub function
+    *(++text) = LEV;
+}
+
+void function_declaration(){ // type func_name (...) {...}
+    match('(');
+    function_parameters();
+    match(')');
+    match('{');
+    function_body();
+
+    curr_id = symbol_table;
+    while (curr_id[Token]) {
+        if (curr_id[Class] == Loc) {
+            curr_id[Class] = curr_id[BClass];
+            curr_id[Type]  = curr_id[BType];
+            curr_id[Value] = curr_id[BValue];
+        }
+        curr_id = curr_id + IdSize;
+    }
+
+
+}
+void enum_declaration(){
+    int i=0;
+    while(token !='{'){  
+        if(token != Id){
+        printf("ERROR in line %d: invalid enum identefier\n",line_num);
+        free_all();
+        exit(-1);
+        }
+        next_token();
+        if (token == Assign) {
+            next_token();
+            if (token != Num) {
+                printf("ERROR in line %d: invalid enum initializer\n", line_num);
+                free_all();
+                exit(-1);
+            }
+            i = token_val;
+            next_token();
+        }
+
+        curr_id[Class] = Num;
+        curr_id[Type] = INT;
+        curr_id[Value] = i++;
+
+        if (token == ',') {
+            next_token();
+        }
+
+    }
+}
+void global_declaration(){
+    // global_declaration ::= enum_decl | variable_decl | function_decl
+    //
+    // enum_decl ::= 'enum' [id] '{' id ['=' 'num'] {',' id ['=' 'num'} '}'
+    //
+    // variable_decl ::= type {'*'} id { ',' {'*'} id } ';'
+    //
+    // function_decl ::= type {'*'} id '(' parameter_decl ')' '{' body_decl '}'
+
+    int type =0;
+    int i=0;
+    base_type =Int;
+    
+    //parse enum
+    if(token == Enum){
+        match(Enum);
+        if(token !='{'){  //their is a name
+            match(Id);
+        }
+        if(token == '{'){
+            match('{');
+            enum_declaration();
+            match('}');
+
+        }
+        match(';');
+        return;
+    }
+    //parse int
+    if (token == Int) {
+        match(Int);
+    } 
+    else if (token == Char) {
+        match(Char);
+        base_type = CHAR;
+    }
+
+    while(token  != ';' && token != '}'){
+        type = base_type;
+        while(token ==Mul){ // handle int**
+            match(Mul);
+            type = type +PTR;
+        }
+        if(token != Id){
+            printf("ERROR in line %d: invalid declaration\n",line_num);
+            free_all();
+            exit(-1);
+        }
+        if(curr_id[Class]){
+            printf("ERROR in line %d: duplicate declaration\n",line_num);
+            free_all();
+            exit(-1);
+        }
+        match(Id);
+        curr_id[Type] = type;
+
+        if (token == '(') {
+            curr_id[Class] = Fun;
+            curr_id[Value] = (int)(text + 1); // memory address of function
+            function_declaration();
+        } else {
+            // variable declaration
+            curr_id[Class] = Glo; // global variable
+            curr_id[Value] = (int)data; // assign memory address
+            data = data + sizeof(int);
+        }
+
+        if (token == ',') {
+            match(',');
+        }
+    }
+    next_token();
+    
+}
 void program(){
     next_token();
     while(token >0){
         //printf("token = %c\n",token);
-        next_token();
+        // next_token();
+        global_declaration();
+
     }
 }
 int eval(){
@@ -456,5 +705,7 @@ int main(int argc, char** argv) {
     // free(prev_text);
     // free(data);
     // free(stack);
-    return eval();
+    int status = eval();
+    free_all();
+    return status;
 }
