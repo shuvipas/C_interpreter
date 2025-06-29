@@ -1,23 +1,23 @@
+
+
 #include <stdio.h>
-#include <stdlib.h>
-typedef struct dict{
-    int key;
-    int value;
-}dict;
-int dict_cmp(const void* a,const void*b){
-    int aval = ((dict*)a)->value;
-    return ((dict*)a)->value -((dict*)b)->value;
-}
-void dict_sort(struct dict* arr,int arrSize){
-    qsort(arr,arrSize, sizeof(dict),dict_cmp);
+
+int fibonacci(int i) {
+    if (i <= 1) {
+        return 1;
+    }
+    return fibonacci(i-1) + fibonacci(i-2);
 }
 
-int main() {
-    printf("Hello, C!\n");
-    int x = 1;
+int main()
+{ 
+    int i;
+    i = 0;
+    while (i <= 10) {
+        printf("fibonacci(%2d) = %d\n", i, fibonacci(i));
+        i = i + 1;
+    }
 
-    char *y = (char*)&x;
-  
-    printf("%c\n",*y+48); // 1 = little endian , 0 = big endian
+    printf("hello world\n");
     return 0;
 }

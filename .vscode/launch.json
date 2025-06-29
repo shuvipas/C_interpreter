@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/c_interpreter.out",
-            "args": ["hello_world.c"],
+            "args": ["./hello_world.c"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
