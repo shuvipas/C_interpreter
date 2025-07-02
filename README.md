@@ -15,10 +15,10 @@
 |type      |  enum     |               |
 |definitions|          |               |
 |          |           |               |
-|sizeof    |           |int, char,ptr  |
+|sizeof    |int, char,ptr|             |
+|          |           |               |
+|          |int a; a=3;|int a=3;       |
 |          |           |               |
 |          |           |               |
-|          |           |               |
-|          |           |               |
-
+you need to declare all varible in the beginng of the funct
 todo: add free to vm 

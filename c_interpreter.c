@@ -21,7 +21,9 @@ int pool_size;
 int line_num;
 int *curr_id = NULL;
 int *symbol_table = NULL;
+int debug; // print the executed instructions
 
+int cycle;
 //for the vm
 //memory segments
 int *text = NULL; 
@@ -54,7 +56,7 @@ enum {
   Assign, Cond, Lor, Lan, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr, Add, Sub, Mul, Div, Mod, Inc, Dec, Brak
 };
 
-// fields of identifier
+// fields of identifier (of curr_id)
 enum {Token, Hash, Name, Type, Class, Value, BType, BClass, BValue, IdSize};
 
 enum{ CHAR, INT,PTR};
@@ -127,12 +129,6 @@ void next_token(){
         else{
             switch (token)
             {
-            // case '\n': 
-            //     line_num++;
-            //     break;
-            // case '#': // skip macros
-            //     while(*src != 0 &&*src != '\n') src++;
-            //     break;
             case '"': //string literals only '\n' is sopported 
             case '\'':
                 last_pos = data;
@@ -789,16 +785,15 @@ void expression(int level) {
                     exit(-1);
         }
     }
-
 }
 
 void statement() {
     // there are 6 kinds of statements here:
-    // 1. if (...) <statement> [else <statement>]
-    // 2. while (...) <statement>
-    // 3. { <statement> }
-    // 4. return xxx;
-    // 5. <empty statement>;
+    // 1-2. if (...) <statement> [else <statement>]
+    // 3. while (...) <statement>
+    // 4. { <statement> }
+    // 5. return xxx;
+    // 6. <empty statement>;
     int *a = NULL;
     int* b = NULL;
     switch (token){
@@ -919,8 +914,6 @@ void function_parameters() {
 }
 
 void function_body() {
-
-
     int pos_local=0; // position of local variables on the stack.
     int type=0;
     pos_local = index_of_bp;
@@ -1000,7 +993,7 @@ void function_declaration(){ // type func_name (...) {...}
 
 void enum_declaration(){
     int i=0;
-    while(token !='{'){  
+    while(token !='}'){  
         if(token != Id){
         printf("ERROR in line %ld: invalid enum identefier\n",line_num);
         free_all();
@@ -1022,10 +1015,7 @@ void enum_declaration(){
         curr_id[Type] = INT;
         curr_id[Value] = i++;
 
-        if (token == ',') {
-            next_token();
-        }
-
+        if (token == ',') next_token();
     }
 }
 
@@ -1115,8 +1105,20 @@ void program(){
 int eval(){
     int op;
     int* tmp;
+    cycle =0;
     while(1){
+        cycle++;
         op = *(pc++);
+        if (debug) {
+            printf("%d> %.4s", cycle,
+                   & "LEA ,IMM ,JMP ,CALL,JZ  ,JNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PUSH,"
+                   "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
+                   "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,EXIT"[op * 5]);
+            if (op <= ADJ)
+                printf(" %d\n", *pc);
+            else
+                printf("\n");
+        }
         switch(op){
             case LEA: ax = (int)(bp + *pc++);break;
 
@@ -1194,9 +1196,12 @@ void free_all(){
     free(text_ptr);
     free(data_ptr);
     free(stack);
+    
 }
 /*
+==========================================================================
 ================================== MAIN ==================================
+==========================================================================
 */
 
 int main(int argc, char **argv)
@@ -1207,7 +1212,20 @@ int main(int argc, char **argv)
 
     argc--;
     argv++;
+    if (argc > 0 && **argv == '-' && (*argv)[1] == 'd') {
+        debug = 1;
+        --argc;
+        ++argv;
+    }
+    if (argc < 1) {
+        printf("usage: xc [-d] file ...\n");
+        return -1;
+    }
 
+    if ((fd = open(*argv, 0)) < 0) {
+        printf("could not open(%s)\n", *argv);
+        return -1;
+    }
     int pool_size = POOL_SIZE; // arbitrary size
     line_num = 1;
 
@@ -1251,7 +1269,7 @@ int main(int argc, char **argv)
     src = "char else enum if int return sizeof while "
           "open read close printf malloc memset memcmp exit void main";
 
-     // add keywords to symbol table
+    // add keywords to symbol table
     i = Char;
     while (i <= While) {
         next_token();
@@ -1263,7 +1281,7 @@ int main(int argc, char **argv)
     while (i <= EXIT) {
         next_token();
         curr_id[Class] = Sys;
-        curr_id[Type] = INT;
+        curr_id[Type] = INT; //return int
         curr_id[Value] = i++;
     }
 
@@ -1297,6 +1315,7 @@ int main(int argc, char **argv)
     close(fd);
 
     program();
+    
     pc = (int *)id_main[Value];
     if (!pc) {
         printf("ERROR: main() not defined\n");

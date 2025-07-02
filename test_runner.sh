@@ -86,8 +86,14 @@ while IFS= read -r -d '' test_file; do
     # Run the interpreted program and capture outputs
     "./$INTERPRETER_BINARY" "$test_file" > interpreted_stdout.tmp 2> interpreted_stderr.tmp
     
+    
     # Remove the "exit(0)" line from interpreter output if it's the last line
-    sed -i '/^exit(0)$/d' interpreted_stdout.tmp
+    # sed -i '/^exit([0-9]\+)$/d' interpreted_stdout.tmp
+    # Remove all last 8 chars 
+    head -c -8 interpreted_stdout.tmp > tmp && mv tmp interpreted_stdout.tmp
+
+
+
     # Compare stdout outputs
     stdout_diff=$(diff -u native_stdout.tmp interpreted_stdout.tmp)
     # Compare stderr outputs
