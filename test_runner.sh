@@ -26,12 +26,25 @@ usage() {
 
 # Function to clean up temporary files
 cleanup() {
-    # Remove temporary files if they exist
-    rm -f "$INTERPRETER_BINARY" \
-       native_stdout.tmp native_stderr.tmp \
-       interpreted_stdout.tmp interpreted_stderr.tmp
-    # Clean up compiled test programs
-    find "$TESTS_DIR" -name "*.c" -exec sh -c 'rm -f "$(dirname "$1")/$(basename "$1" .c)"' sh {} \;
+    # # Remove temporary files if they exist
+    echo "Cleaning up..."
+
+    # Remove interpreter binary
+    rm -f "$INTERPRETER_BINARY"
+
+    # Remove all temporary output files
+    rm -f native_stdout.tmp native_stderr.tmp interpreted_stdout.tmp interpreted_stderr.tmp
+
+    # Remove compiled test binaries (same name as .c file without the extension)
+    find "$TESTS_DIR" -type f -name "*.c" -exec sh -c '
+        for cfile; do
+            exe="${cfile%.c}"
+            [ -f "$exe" ] && rm -f "$exe"
+        done
+    ' sh {} +
+
+    # Remove temporary file created by head -c -8 workaround if not already handled
+    rm -f tmp
 }
 
 # Register cleanup function to run on exit or interrupt
@@ -118,7 +131,7 @@ while IFS= read -r -d '' test_file; do
     fi
     
     # Clean up the compiled test program
-    rm -f "${test_file%.c}"
+    # rm -f "${test_file%.c}"
 done < <(find "$TESTS_DIR" -type f -name "*.c" -print0)
 
 # Print summary
