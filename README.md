@@ -78,4 +78,3 @@ To run the test suite:
   - `data`: Global/static memory
   - `stack`: Function call stack
   - `symbol_table`: Identifier metadata
-
