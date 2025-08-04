@@ -1110,12 +1110,12 @@ int eval(){
         cycle++;
         op = *(pc++);
         if (debug) {
-            printf("%d> %.4s", cycle,
+            printf("%ld> %.4s", cycle,
                    & "LEA ,IMM ,JMP ,CALL,JZ  ,JNZ ,ENT ,ADJ ,LEV ,LI  ,LC  ,SI  ,SC  ,PUSH,"
                    "OR  ,XOR ,AND ,EQ  ,NE  ,LT  ,GT  ,LE  ,GE  ,SHL ,SHR ,ADD ,SUB ,MUL ,DIV ,MOD ,"
                    "OPEN,READ,CLOS,PRTF,MALC,MSET,MCMP,EXIT"[op * 5]);
             if (op <= ADJ)
-                printf(" %d\n", *pc);
+                printf(" %ld\n", *pc);
             else
                 printf("\n");
         }
@@ -1196,6 +1196,7 @@ void free_all(){
     free(text_ptr);
     free(data_ptr);
     free(stack);
+    free(symbol_table);
     
 }
 /*
@@ -1244,7 +1245,7 @@ int main(int argc, char **argv)
         free_all();
         return -1;
     }
-    
+    data_ptr =data;
     stack = malloc(pool_size);
     if(!stack){
         printf("ERROR: malloc for stack segment\n");
